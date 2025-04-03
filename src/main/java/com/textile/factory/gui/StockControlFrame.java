@@ -5,6 +5,9 @@ import com.textile.factory.model.Item;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.sql.SQLException;
 import java.util.List;
 
@@ -13,6 +16,7 @@ public class StockControlFrame extends JFrame {
     private JTable stockTable;
     private DefaultTableModel tableModel;
     private JButton addButton, updateButton, deleteButton, refreshButton, lowStockReportButton, backButton;
+    private String[] categories = {"T-Shirt", "Shirt", "Pants", "Dress", "Jacket", "Skirt", "Other"};
 
     public StockControlFrame() {
         setTitle("Stock Control");
@@ -55,8 +59,24 @@ public class StockControlFrame extends JFrame {
         panel.add(buttonPanel);
 
         // Add action listeners
-        addButton.addActionListener(e -> addItem());
-        updateButton.addActionListener(e -> updateItem());
+        addButton.addActionListener(e -> showItemForm(null));
+        updateButton.addActionListener(e -> {
+            int selectedRow = stockTable.getSelectedRow();
+            if (selectedRow == -1) {
+                JOptionPane.showMessageDialog(this, "Please select an item to update.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            Item item = new Item(
+                (int) stockTable.getValueAt(selectedRow, 0),
+                (String) stockTable.getValueAt(selectedRow, 1),
+                (String) stockTable.getValueAt(selectedRow, 2),
+                (String) stockTable.getValueAt(selectedRow, 3),
+                (double) stockTable.getValueAt(selectedRow, 4),
+                (int) stockTable.getValueAt(selectedRow, 5),
+                (int) stockTable.getValueAt(selectedRow, 6)
+            );
+            showItemForm(item);
+        });
         deleteButton.addActionListener(e -> deleteItem());
         refreshButton.addActionListener(e -> loadStock());
         lowStockReportButton.addActionListener(e -> generateLowStockReport());
@@ -68,6 +88,110 @@ public class StockControlFrame extends JFrame {
         add(panel);
         loadStock(); // Load stock when the frame is opened
         setVisible(true);
+    }
+
+    // Method to show the item form (used for both add and update)
+    private void showItemForm(Item existingItem) {
+        JDialog dialog = new JDialog(this, existingItem == null ? "Add New Item" : "Update Item", true);
+        dialog.setSize(400, 400);
+        dialog.setLayout(new BorderLayout());
+
+        JPanel formPanel = new JPanel(new GridLayout(0, 2, 5, 5));
+
+        // Item Number
+        JTextField itemNumberField = new JTextField();
+        formPanel.add(new JLabel("Item Number:"));
+        formPanel.add(itemNumberField);
+
+        // Category (Dropdown)
+        JComboBox<String> categoryCombo = new JComboBox<>(categories);
+        formPanel.add(new JLabel("Category:"));
+        formPanel.add(categoryCombo);
+
+        // Size (Radio Buttons)
+        JPanel sizePanel = new JPanel();
+        ButtonGroup sizeGroup = new ButtonGroup();
+        JRadioButton smallRadio = new JRadioButton("Small");
+        JRadioButton mediumRadio = new JRadioButton("Medium");
+        JRadioButton largeRadio = new JRadioButton("Large");
+        sizeGroup.add(smallRadio);
+        sizeGroup.add(mediumRadio);
+        sizeGroup.add(largeRadio);
+        sizePanel.add(smallRadio);
+        sizePanel.add(mediumRadio);
+        sizePanel.add(largeRadio);
+        formPanel.add(new JLabel("Size:"));
+        formPanel.add(sizePanel);
+
+        // Cost Price
+        JTextField costPriceField = new JTextField();
+        formPanel.add(new JLabel("Cost Price:"));
+        formPanel.add(costPriceField);
+
+        // Stock Level
+        JTextField stockLevelField = new JTextField();
+        formPanel.add(new JLabel("Stock Level:"));
+        formPanel.add(stockLevelField);
+
+        // Out of Stock Threshold
+        JTextField thresholdField = new JTextField();
+        formPanel.add(new JLabel("Out of Stock Threshold:"));
+        formPanel.add(thresholdField);
+
+        // If updating, populate fields with existing values
+        if (existingItem != null) {
+            itemNumberField.setText(existingItem.getItemNumber());
+            categoryCombo.setSelectedItem(existingItem.getCategory());
+            switch (existingItem.getSize()) {
+                case "Small": smallRadio.setSelected(true); break;
+                case "Medium": mediumRadio.setSelected(true); break;
+                case "Large": largeRadio.setSelected(true); break;
+            }
+            costPriceField.setText(String.valueOf(existingItem.getCostPrice()));
+            stockLevelField.setText(String.valueOf(existingItem.getStockLevel()));
+            thresholdField.setText(String.valueOf(existingItem.getOutOfStockThreshold()));
+        }
+
+        // Submit button
+        JButton submitButton = new JButton(existingItem == null ? "Add Item" : "Update Item");
+        submitButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    // Get selected size
+                    String size = "";
+                    if (smallRadio.isSelected()) size = "Small";
+                    else if (mediumRadio.isSelected()) size = "Medium";
+                    else if (largeRadio.isSelected()) size = "Large";
+
+                    Item item = new Item(
+                        existingItem != null ? existingItem.getItemId() : 0,
+                        itemNumberField.getText(),
+                        (String) categoryCombo.getSelectedItem(),
+                        size,
+                        Double.parseDouble(costPriceField.getText()),
+                        Integer.parseInt(stockLevelField.getText()),
+                        Integer.parseInt(thresholdField.getText())
+                    );
+
+                    ItemDAO itemDAO = new ItemDAO();
+                    if (existingItem == null) {
+                        itemDAO.addItem(item);
+                    } else {
+                        itemDAO.updateItem(item);
+                    }
+                    loadStock();
+                    dialog.dispose();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(dialog, "Invalid input or database error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+
+        dialog.add(formPanel, BorderLayout.CENTER);
+        dialog.add(submitButton, BorderLayout.SOUTH);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
     }
 
     // Method to load stock into the table
@@ -89,70 +213,6 @@ public class StockControlFrame extends JFrame {
             }
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this, "Failed to load stock: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    // Method to add a new item
-    private void addItem() {
-        // Open a dialog to input item details
-        String itemNumber = JOptionPane.showInputDialog(this, "Enter Item Number:");
-        String category = JOptionPane.showInputDialog(this, "Enter Category:");
-        String size = JOptionPane.showInputDialog(this, "Enter Size:");
-        String costPrice = JOptionPane.showInputDialog(this, "Enter Cost Price:");
-        String stockLevel = JOptionPane.showInputDialog(this, "Enter Stock Level:");
-        String outOfStockThreshold = JOptionPane.showInputDialog(this, "Enter Out of Stock Threshold:");
-
-        try {
-            Item item = new Item(
-                0, // Item ID will be auto-generated
-                itemNumber,
-                category,
-                size,
-                Double.parseDouble(costPrice),
-                Integer.parseInt(stockLevel),
-                Integer.parseInt(outOfStockThreshold)
-            );
-
-            ItemDAO itemDAO = new ItemDAO();
-            itemDAO.addItem(item);
-            loadStock(); // Refresh the table
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Invalid input or database error: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    // Method to update an existing item
-    private void updateItem() {
-        int selectedRow = stockTable.getSelectedRow();
-        if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this, "Please select an item to update.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        int itemId = (int) stockTable.getValueAt(selectedRow, 0);
-        String itemNumber = JOptionPane.showInputDialog(this, "Enter Item Number:", stockTable.getValueAt(selectedRow, 1));
-        String category = JOptionPane.showInputDialog(this, "Enter Category:", stockTable.getValueAt(selectedRow, 2));
-        String size = JOptionPane.showInputDialog(this, "Enter Size:", stockTable.getValueAt(selectedRow, 3));
-        String costPrice = JOptionPane.showInputDialog(this, "Enter Cost Price:", stockTable.getValueAt(selectedRow, 4));
-        String stockLevel = JOptionPane.showInputDialog(this, "Enter Stock Level:", stockTable.getValueAt(selectedRow, 5));
-        String outOfStockThreshold = JOptionPane.showInputDialog(this, "Enter Out of Stock Threshold:", stockTable.getValueAt(selectedRow, 6));
-
-        try {
-            Item item = new Item(
-                itemId,
-                itemNumber,
-                category,
-                size,
-                Double.parseDouble(costPrice),
-                Integer.parseInt(stockLevel),
-                Integer.parseInt(outOfStockThreshold)
-            );
-
-            ItemDAO itemDAO = new ItemDAO();
-            itemDAO.updateItem(item);
-            loadStock(); // Refresh the table
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Invalid input or database error: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 

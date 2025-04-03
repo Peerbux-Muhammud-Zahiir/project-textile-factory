@@ -5,6 +5,9 @@ import com.textile.factory.model.Order;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.sql.SQLException;
 import java.util.List;
 
@@ -54,8 +57,16 @@ public class OrderManagementFrame extends JFrame {
         panel.add(buttonPanel);
 
         // Add action listeners
-        addButton.addActionListener(e -> addOrder());
-        updateButton.addActionListener(e -> updateOrder());
+        addButton.addActionListener(e -> showOrderForm(null));
+        updateButton.addActionListener(e -> {
+            int selectedRow = orderTable.getSelectedRow();
+            if (selectedRow == -1) {
+                JOptionPane.showMessageDialog(this, "Please select an order to update.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            Order selectedOrder = getOrderFromTable(selectedRow);
+            showOrderForm(selectedOrder);
+        });
         deleteButton.addActionListener(e -> deleteOrder());
         refreshButton.addActionListener(e -> loadOrders());
         generateReportButton.addActionListener(e -> generateQuotation());
@@ -67,6 +78,121 @@ public class OrderManagementFrame extends JFrame {
         add(panel);
         loadOrders(); // Load orders when the frame is opened
         setVisible(true);
+    }
+
+    private Order getOrderFromTable(int row) {
+        return new Order(
+            (int) orderTable.getValueAt(row, 0),
+            (int) orderTable.getValueAt(row, 1),
+            (String) orderTable.getValueAt(row, 2),
+            (double) orderTable.getValueAt(row, 3),
+            (double) orderTable.getValueAt(row, 4),
+            (String) orderTable.getValueAt(row, 5)
+        );
+    }
+
+    private void showOrderForm(Order order) {
+        JDialog dialog = new JDialog(this, order == null ? "Add New Order" : "Update Order", true);
+        dialog.setSize(400, 300);
+        dialog.setLayout(new GridLayout(0, 2, 5, 5));
+
+        // Form fields
+        JLabel customerIdLabel = new JLabel("Customer ID:");
+        JTextField customerIdField = new JTextField();
+        if (order != null) customerIdField.setText(String.valueOf(order.getCustomerId()));
+
+        JLabel orderDateLabel = new JLabel("Order Date (YYYY-MM-DD):");
+        JTextField orderDateField = new JTextField();
+        if (order != null) orderDateField.setText(order.getOrderDate());
+
+        JLabel transportChargesLabel = new JLabel("Transport Charges:");
+        JTextField transportChargesField = new JTextField();
+        if (order != null) transportChargesField.setText(String.valueOf(order.getTransportCharges()));
+
+        JLabel totalAmountLabel = new JLabel("Total Amount:");
+        JTextField totalAmountField = new JTextField();
+        if (order != null) totalAmountField.setText(String.valueOf(order.getTotalAmount()));
+
+        JLabel statusLabel = new JLabel("Status:");
+        JPanel statusPanel = new JPanel();
+        ButtonGroup statusGroup = new ButtonGroup();
+        JRadioButton pendingRadio = new JRadioButton("pending");
+        JRadioButton shippedRadio = new JRadioButton("shipped");
+        JRadioButton backorderedRadio = new JRadioButton("backordered");
+        statusGroup.add(pendingRadio);
+        statusGroup.add(shippedRadio);
+        statusGroup.add(backorderedRadio);
+        statusPanel.add(pendingRadio);
+        statusPanel.add(shippedRadio);
+        statusPanel.add(backorderedRadio);
+
+        if (order != null) {
+            switch (order.getStatus()) {
+                case "pending":
+                    pendingRadio.setSelected(true);
+                    break;
+                case "shipped":
+                    shippedRadio.setSelected(true);
+                    break;
+                case "backordered":
+                    backorderedRadio.setSelected(true);
+                    break;
+            }
+        } else {
+            pendingRadio.setSelected(true); // Default selection
+        }
+
+        // Add components to dialog
+        dialog.add(customerIdLabel);
+        dialog.add(customerIdField);
+        dialog.add(orderDateLabel);
+        dialog.add(orderDateField);
+        dialog.add(transportChargesLabel);
+        dialog.add(transportChargesField);
+        dialog.add(totalAmountLabel);
+        dialog.add(totalAmountField);
+        dialog.add(statusLabel);
+        dialog.add(statusPanel);
+
+        // Submit button
+        JButton submitButton = new JButton("Submit");
+        submitButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    String status = "";
+                    if (pendingRadio.isSelected()) status = "pending";
+                    else if (shippedRadio.isSelected()) status = "shipped";
+                    else if (backorderedRadio.isSelected()) status = "backordered";
+
+                    Order newOrder = new Order(
+                        order != null ? order.getOrderId() : 0,
+                        Integer.parseInt(customerIdField.getText()),
+                        orderDateField.getText(),
+                        Double.parseDouble(transportChargesField.getText()),
+                        Double.parseDouble(totalAmountField.getText()),
+                        status
+                    );
+
+                    OrderDAO orderDAO = new OrderDAO();
+                    if (order == null) {
+                        orderDAO.addOrder(newOrder);
+                    } else {
+                        orderDAO.updateOrder(newOrder);
+                    }
+                    loadOrders();
+                    dialog.dispose();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(dialog, "Invalid input or database error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+
+        dialog.add(new JLabel()); // Empty cell for layout
+        dialog.add(submitButton);
+
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
     }
 
     // Method to load orders into the table
@@ -87,66 +213,6 @@ public class OrderManagementFrame extends JFrame {
             }
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this, "Failed to load orders: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    // Method to add a new order
-    private void addOrder() {
-        // Open a dialog to input order details
-        String customerId = JOptionPane.showInputDialog(this, "Enter Customer ID:");
-        String orderDate = JOptionPane.showInputDialog(this, "Enter Order Date (YYYY-MM-DD):");
-        String transportCharges = JOptionPane.showInputDialog(this, "Enter Transport Charges:");
-        String totalAmount = JOptionPane.showInputDialog(this, "Enter Total Amount:");
-        String status = JOptionPane.showInputDialog(this, "Enter Status (pending/shipped/backordered):");
-
-        try {
-            Order order = new Order(
-                0, // Order ID will be auto-generated
-                Integer.parseInt(customerId),
-                orderDate,
-                Double.parseDouble(transportCharges),
-                Double.parseDouble(totalAmount),
-                status
-            );
-
-            OrderDAO orderDAO = new OrderDAO();
-            orderDAO.addOrder(order);
-            loadOrders(); // Refresh the table
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Invalid input or database error: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    // Method to update an existing order
-    private void updateOrder() {
-        int selectedRow = orderTable.getSelectedRow();
-        if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this, "Please select an order to update.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        int orderId = (int) orderTable.getValueAt(selectedRow, 0);
-        String customerId = JOptionPane.showInputDialog(this, "Enter Customer ID:", orderTable.getValueAt(selectedRow, 1));
-        String orderDate = JOptionPane.showInputDialog(this, "Enter Order Date (YYYY-MM-DD):", orderTable.getValueAt(selectedRow, 2));
-        String transportCharges = JOptionPane.showInputDialog(this, "Enter Transport Charges:", orderTable.getValueAt(selectedRow, 3));
-        String totalAmount = JOptionPane.showInputDialog(this, "Enter Total Amount:", orderTable.getValueAt(selectedRow, 4));
-        String status = JOptionPane.showInputDialog(this, "Enter Status (pending/shipped/backordered):", orderTable.getValueAt(selectedRow, 5));
-
-        try {
-            Order order = new Order(
-                orderId,
-                Integer.parseInt(customerId),
-                orderDate,
-                Double.parseDouble(transportCharges),
-                Double.parseDouble(totalAmount),
-                status
-            );
-
-            OrderDAO orderDAO = new OrderDAO();
-            orderDAO.updateOrder(order);
-            loadOrders(); // Refresh the table
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Invalid input or database error: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -184,8 +250,8 @@ public class OrderManagementFrame extends JFrame {
                 String report = "Quotation for Order ID: " + order.getOrderId() + "\n" +
                                "Customer ID: " + order.getCustomerId() + "\n" +
                                "Order Date: " + order.getOrderDate() + "\n" +
-                               "Transport Charges: $" + order.getTransportCharges() + "\n" +
-                               "Total Amount: $" + order.getTotalAmount() + "\n" +
+                               "Transport Charges: Rs" + order.getTransportCharges() + "\n" +
+                               "Total Amount: Rs" + order.getTotalAmount() + "\n" +
                                "Status: " + order.getStatus();
                 JOptionPane.showMessageDialog(this, report, "Quotation", JOptionPane.INFORMATION_MESSAGE);
             }
